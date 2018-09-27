@@ -18,6 +18,7 @@
 		"scripts": [
 			"/util/socket.io.js",
 			"/util/moment.js",
+			"/util/searchTwitter.js",
 			"/scripts/background.js"
 		],
 		"persistent": true

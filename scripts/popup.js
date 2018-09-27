@@ -1,24 +1,16 @@
 var backgroundPage = null;
 console.log( "Popup script started." );
 
-moment.updateLocale('en', {
-    relativeTime : {
-        future: "in %s",
-        past:   "%s ago",
-        s  : "%d seconds",
-        ss : "%d seconds",
-        m:  "%d minutes",
-        mm: "%d minutes",
-        h:  "an hour",
-        hh: "%d hours",
-        d:  "a day",
-        dd: "%d days",
-        M:  "a month",
-        MM: "%d months",
-        y:  "a year",
-        yy: "%d years"
-    }
-});
+
+function tableComparator(x, y) {
+	var xTime = new Date(x.getAttribute("absolute_time")).getTime();
+	var yTime = new Date(y.getAttribute("absolute_time")).getTime();
+	return xTime < yTime;
+}
+
+function tdSelector(x) {
+	return x.getElementsByClassName("raidTime")[0];
+}
 
 setInterval( function () {
 	var raidTimes = document.getElementsByClassName("raidTime");
@@ -31,6 +23,7 @@ setInterval( function () {
 
 chrome.runtime.getBackgroundPage( function ( tempBackgroundPage ) {
 	backgroundPage = tempBackgroundPage;
+	moment.updateLocale('en', backgroundPage.localeSettings);
 	console.log( "Got background page. Amount of cached raids: " + backgroundPage.raids.length );
 	backgroundPage.RefreshRaidConfigs();
 
@@ -54,11 +47,15 @@ chrome.runtime.getBackgroundPage( function ( tempBackgroundPage ) {
 	if ( !backgroundPage.showSettings.time ) {
 		document.getElementById( "header-container" ).removeChild( document.getElementById( "time-header" ) );
 	}
+	if (!backgroundPage.showSettings.id) {
+		document.getElementById( "header-container" ).removeChild( document.getElementById( "id-header" ) );
+	}
 
+	// console.log(backgroundPage.raids.length);
 	for ( var i = 0; i < backgroundPage.raids.length; i++ ) {
 		var raidConfig = backgroundPage.FindRaidConfig( backgroundPage.raids[ i ].room );
 		if ( raidConfig !== null ) {
-			console.log( "Found raid config. Adding raid row..." )
+			// console.log( "Found raid config. Adding raid row..." )
 			var raidRow = document.createElement( "tr" );
 			var roomTD = document.createElement( "td" );
 			roomTD.innerHTML = raidConfig.english;
@@ -88,13 +85,33 @@ chrome.runtime.getBackgroundPage( function ( tempBackgroundPage ) {
 			} else if ( backgroundPage.raids[ i ].status === "error" ) {
 				button.classList.add( "negative" );
 				button.innerHTML = "Error";
+			} else if (backgroundPage.raids[i].status === "no AP") {
+				button.classList.add( "negative" );
+				button.innerHTML = "Insufficient AP";
+			} else if (backgroundPage.raids[i].status === "over") {
+				button.classList.add( "negative" );
+				button.innerHTML = "Battle ended";
+			} else if (backgroundPage.raids[i].status === "battle not found") {
+				button.classList.add( "negative" );
+				button.innerHTML = "Raid not found";
+			}  else if (backgroundPage.raids[i].status === "granblue not found") {
+				button.classList.add( "negative" );
+				button.innerHTML = "No Granblue page";
+			}  else if (backgroundPage.raids[i].status === "api disabled") {
+				button.classList.add( "negative" );
+				button.innerHTML = "Viramate API disabled";
+			}  else if (backgroundPage.raids[i].status === "battle is full") {
+				button.classList.add( "negative" );
+				button.innerHTML = "Raid full";
 			}
 			button.addEventListener( 'click', function ( evt ) {
 				JoinButtonClicked( evt.target.id.substr( 0, 8 ) );
 			} );
 			buttonTD.appendChild( button );
 			raidRow.appendChild( roomTD );
-			raidRow.appendChild( idTD );
+			if (backgroundPage.showSettings.id) {
+				raidRow.appendChild( idTD );
+			}
 			if ( backgroundPage.showSettings.message ) {
 				raidRow.appendChild( messageTD );
 			}
@@ -102,8 +119,12 @@ chrome.runtime.getBackgroundPage( function ( tempBackgroundPage ) {
 				raidRow.appendChild( timeTD );
 			}
 			raidRow.appendChild( buttonTD );
+
+			// console.log(raidRow);
+
 			document.getElementById( "raid-table-body" ).appendChild( raidRow );
 		}
+		backgroundPage.sortTable(document.getElementById("raid-table"), tableComparator, tdSelector);
 	}
 
 	backgroundPage.unseenRaids = 0;
@@ -113,54 +134,67 @@ chrome.runtime.getBackgroundPage( function ( tempBackgroundPage ) {
 } );
 
 chrome.runtime.onMessage.addListener( function ( message, sender, sendResponse ) {
-	if ( message.raid ) {
-		console.log( "Received new raid from background page. ID: " + message.raid.id );
-		var raidConfig = backgroundPage.FindRaidConfig( message.raid.room );
-		if ( raidConfig !== null ) {
-			console.log( "Found raid config. Adding raid row..." )
-			var raidRow = document.createElement( "tr" );
-			var roomTD = document.createElement( "td" );
-			roomTD.innerHTML = raidConfig.english;
-			var idTD = document.createElement( "td" );
-			idTD.id = message.raid.id + '-label';
-			idTD.innerHTML = message.raid.id;
-			var messageTD = document.createElement( "td" );
-			messageTD.innerHTML = message.raid.message;
-			var timeTD = document.createElement( "td" );
-			var raidTime = moment( message.raid.time );
-			timeTD.setAttribute("class", "raidTime");
-			timeTD.setAttribute("absolute_time", raidTime.format())
-			timeTD.innerHTML = raidTime.fromNow();
-			var buttonTD = document.createElement( "td" );
-			var button = document.createElement( "button" );
-			button.id = message.raid.id + '-btn';
-			button.classList.add( "ui", "tiny", "primary", "button" );
-			button.innerHTML = "Join"
-			button.addEventListener( 'click', function ( evt ) {
-				JoinButtonClicked( message.raid.id );
-			} );
-			buttonTD.appendChild( button );
-			raidRow.appendChild( roomTD );
-			raidRow.appendChild( idTD );
-			if ( backgroundPage.showSettings.message ) {
-				raidRow.appendChild( messageTD );
-			}
-			if ( backgroundPage.showSettings.time ) {
-				raidRow.appendChild( timeTD );
-			}
-			raidRow.appendChild( buttonTD );
-			document.getElementById( "raid-table-body" ).insertBefore( raidRow, document.getElementById( "raid-table-body" ).firstChild );
+	// console.log(message);
+	if ( message.raids ) {
+		for (var i = 0; i < message.raids.length; i++) {
+			message.raid = message.raids[i];
+			// console.log( "Received new raid from background page. ID: " + message.raid.id );
+			var raidConfig = backgroundPage.FindRaidConfig( message.raid.room );
+			if ( raidConfig !== null ) {
+				// console.log( "Found raid config. Adding raid row..." )
+				var raidRow = document.createElement( "tr" );
+				var roomTD = document.createElement( "td" );
+				roomTD.innerHTML = raidConfig.english;
+				var idTD = document.createElement( "td" );
+				idTD.id = message.raid.id + '-label';
+				idTD.innerHTML = message.raid.id;
+				var messageTD = document.createElement( "td" );
+				messageTD.innerHTML = message.raid.message;
+				var timeTD = document.createElement( "td" );
+				var raidTime = moment( message.raid.time );
+				timeTD.setAttribute("class", "raidTime");
+				timeTD.setAttribute("absolute_time", raidTime.format())
+				timeTD.innerHTML = raidTime.fromNow();
+				var buttonTD = document.createElement( "td" );
+				var button = document.createElement( "button" );
+				button.id = message.raid.id + '-btn';
+				button.classList.add( "ui", "tiny", "primary", "button" );
+				button.innerHTML = "Join"
+				button.addEventListener( 'click', function ( evt ) {
+					JoinButtonClicked( message.raid.id );
+				} );
+				buttonTD.appendChild( button );
+				raidRow.appendChild( roomTD );
+				// raidRow.appendChild( idTD );
+				if (backgroundPage.showSettings.id) {
+					raidRow.appendChild( idTD );
+					// console.log(backgroundPage.showSettings);
+				}
+				if ( backgroundPage.showSettings.message ) {
+					raidRow.appendChild( messageTD );
+				}
+				if ( backgroundPage.showSettings.time ) {
+					raidRow.appendChild( timeTD );
+				}
+				raidRow.appendChild( buttonTD );
 
-			if ( document.getElementById( "raid-table-body" ).childNodes.length > backgroundPage.raidLimit ) {
-				console.log( "Too many raid rows. Removing oldest one..." );
-				document.getElementById( "raid-table-body" ).removeChild( document.getElementById( "raid-table-body" ).lastChild );
-			}
+				// console.log(raidRow);
 
-			backgroundPage.unseenRaids = 0;
-			chrome.browserAction.setBadgeText( {
-				text: ""
-			} );
+				document.getElementById( "raid-table-body" ).insertBefore( raidRow, document.getElementById( "raid-table-body" ).firstChild );
+			}
 		}
+		backgroundPage.sortTable(document.getElementById("raid-table"), tableComparator, tdSelector);
+		var raidTableBody = document.getElementById( "raid-table-body" );
+		while (raidTableBody.childNodes.length > backgroundPage.raidLimit ) {
+			// console.log( "Too many raid rows. Removing oldest one..." );
+			raidTableBody.removeChild( document.getElementById( "raid-table-body" ).lastChild );
+		}
+
+		backgroundPage.unseenRaids = 0;
+		chrome.browserAction.setBadgeText( {
+			text: ""
+		} );
+		
 	} else if ( message.viramate ) {
 		console.log( "Received new Viramate message from background page." );
 		console.dir( message );
@@ -259,7 +293,6 @@ chrome.runtime.onMessage.addListener( function ( message, sender, sendResponse )
 
 function JoinButtonClicked( id ) {
 	console.log( "Join button clicked. ID: " + id );
-	_gaq.push( [ '_trackEvent', "Join", 'clicked' ] );
 
 	try {
 		var raidLabel = document.getElementById( id + '-label' );

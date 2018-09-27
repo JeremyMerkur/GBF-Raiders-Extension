@@ -71,13 +71,21 @@ chrome.runtime.getBackgroundPage( function ( backgroundPage ) {
 		document.getElementById( "viramate-id-input" ).value = items.viramateID;
 	} );
 
+	var showSettings;
 	chrome.storage.sync.get( {
 		showSettings: {
 			message: false,
 			time: false,
-			close: false
+			close: false,
+			id: false,
+			devMode: true,
+			bearerToken: ""
 		}
 	}, function ( items ) {
+		showSettings = items.showSettings;
+		if (items.showSettings.id) {
+			document.getElementById("show-id-input").checked = true;
+		}
 		if ( items.showSettings.message ) {
 			document.getElementById( "show-message-input" ).checked = true;
 		}
@@ -87,7 +95,14 @@ chrome.runtime.getBackgroundPage( function ( backgroundPage ) {
 		if ( items.showSettings.close ) {
 			document.getElementById( "close-click-input" ).checked = true;
 		}
-		console.log( "Setting up checkboxes..." );
+		// if (items.showSettings.devMode) {
+		document.getElementById("dev-mode-input").checked = true;
+		document.getElementById("dev-mode").style.display = "none";
+		document.getElementById("bearer-token-input").value = items.showSettings.bearerToken;
+		// } else {
+		// 	document.getElementById("bearer-token-input-wrapper").style.display = "none";
+		// }
+		// console.log( "Setting up checkboxes..." );
 		$( '.ui.checkbox' ).checkbox();
 	} );
 
@@ -122,6 +137,29 @@ chrome.runtime.getBackgroundPage( function ( backgroundPage ) {
 	filterBox.addEventListener("input", filter);
 	minLevelBox.addEventListener("input", filter);
 	maxLevelBox.addEventListener("input", filter);
+
+	function toggleDevMode(event) {
+		if (document.getElementById("dev-mode-input").checked ) {
+			document.getElementById("bearer-token-input-wrapper").style.display = "";
+			chrome.storage.sync.get( {
+				showSettings: {
+					message: false,
+					time: false,
+					close: false,
+					id: false,
+					devMode: false,
+					bearerToken: ""
+				}
+			}, function (items) {
+				console.log(items.showSettings.bearerToken);
+				document.getElementById("bearer-token-input").value = items.showSettings.bearerToken;
+			} );
+		} else {
+			document.getElementById("bearer-token-input-wrapper").style.display = "none";
+		}
+	}
+
+	document.getElementById("dev-mode").addEventListener("change", toggleDevMode);
 
 	var selectAllButton = document.getElementById("select-all");
 	selectAllButton.addEventListener("click", function(event) {
@@ -195,8 +233,14 @@ chrome.runtime.getBackgroundPage( function ( backgroundPage ) {
 		var showSettings = {
 			message: false,
 			time: false,
-			close: false
-		};
+			close: false,
+			id: false,
+			devMode: true,
+			bearerToken: ""
+		}
+		if (document.getElementById( "show-id-input" ).checked) {
+			showSettings.id = true;
+		}
 		if ( document.getElementById( "show-message-input" ).checked ) {
 			showSettings.message = true;
 		}
@@ -206,6 +250,10 @@ chrome.runtime.getBackgroundPage( function ( backgroundPage ) {
 		if ( document.getElementById( "close-click-input" ).checked ) {
 			showSettings.close = true;
 		}
+		// if (document.getElementById("dev-mode-input").checked) {
+		// 	showSettings.devMode = true;
+		// }
+		showSettings.bearerToken = document.getElementById("bearer-token-input").value;
 
 		var viramateID = document.getElementById( "viramate-id-input" ).value;
 

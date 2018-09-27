@@ -1,12 +1,16 @@
-var socket = io.connect( 'https://www.gbfraiders.com/' );
+// var socket = io.connect( 'https://www.gbfraiders.com/' );
 var raids = [];
 var raidConfigs = [];
+var followedRaids = [];
 var trackedRaids = [];
 var loudRaids = [];
 var showSettings = {
 	message: false,
 	time: false,
-	close: false
+	close: false,
+	id: false,
+	devMode: true,
+	bearerToken: ""
 };
 var notifications = [];
 var unseenRaids = 0;
@@ -14,6 +18,8 @@ var raidLimit = 20;
 var wasDown = false;
 var muted = false;
 var stopped = false;
+var queried = false;
+var midQuery = false;
 var viramateID = "fgpokpknehglcioijejfeebigdnbnokj";
 var viramateScript = document.createElement( 'iframe' );
 viramateScript.src = "chrome-extension://" + viramateID + "/content/api.html";
@@ -29,7 +35,7 @@ var titanfallDroppingNowSoundNotif = new Audio( '/assets/sounds/Titanfall_Droppi
 
 console.log( "Background script started." );
 
-moment.updateLocale('en', {
+var localeSettings = {
     relativeTime : {
         future: "in %s",
         past:   "%s ago",
@@ -46,30 +52,43 @@ moment.updateLocale('en', {
         y:  "a year",
         yy: "%d years"
     }
-});
+}
 
-setInterval( function () {
-	if ( socket !== null && socket.connected ) {
-		console.log( "Connection Status: UP" );
-		if ( wasDown ) {
-			console.log( "Recovering from connection down..." );
-			chrome.storage.sync.get( {
-				selectedRaids: []
-			}, function ( items ) {
-				console.log( "Getting selected raids from storage..." );
-				for ( var i = 0; i < items.selectedRaids.length; i++ ) {
-					socket.emit( 'subscribe', {
-						room: items.selectedRaids[ i ]
-					} );
-				}
-			} );
+moment.updateLocale('en', localeSettings);
+
+function sortTable(table, comparator, selector) {
+	var rows, switching, i, x, y, shouldSwitch;
+	switching = true;
+	/* Make a loop that will continue until
+	no switching has been done: */
+	while (switching) {
+		// Start by saying: no switching is done:
+		switching = false;
+		rows = table.rows;
+		/* Loop through all table rows (except the
+		first, which contains table headers): */
+		for (i = 1; i < (rows.length - 1); i++) {
+			// Start by saying there should be no switching:
+			shouldSwitch = false;
+			/* Get the two elements you want to compare,
+			one from current row and one from the next: */
+			x = rows[i].getElementsByClassName("raidTime")[0];
+			y = rows[i + 1].getElementsByClassName("raidTime")[0];
+			// Check if the two rows should switch place:
+			if (comparator(x, y)) {
+				// If so, mark as a switch and break the loop:
+				shouldSwitch = true;
+				break;
+			}
 		}
-		wasDown = false;
-	} else {
-		console.log( "Connection Status: DOWN" );
-		wasDown = true;
+		if (shouldSwitch) {
+			/* If a switch has been marked, make the switch
+			and mark that a switch has been done: */
+			rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+			switching = true;
+		}
 	}
-}, 5000 );
+}
 
 function FindRaid( id ) {
 	var result = null;
@@ -99,6 +118,28 @@ function FindRaidConfig( room ) {
 	var result = null;
 	for ( var i = 0; i < raidConfigs.length; i++ ) {
 		if ( raidConfigs[ i ].room === room ) {
+			result = raidConfigs[ i ];
+			break;
+		}
+	}
+	return result;
+}
+
+function FindRaidConfigEN( room ) {
+	var result = null;
+	for ( var i = 0; i < raidConfigs.length; i++ ) {
+		if ( raidConfigs[ i ].english === room ) {
+			result = raidConfigs[ i ];
+			break;
+		}
+	}
+	return result;
+}
+
+function FindRaidConfigJP( room ) {
+	var result = null;
+	for ( var i = 0; i < raidConfigs.length; i++ ) {
+		if ( raidConfigs[ i ].japanese === room ) {
 			result = raidConfigs[ i ];
 			break;
 		}
@@ -169,6 +210,24 @@ function RefreshRaidConfigs() {
 	} );
 }
 
+function buildQueryString() {
+	// {category: "Nightmare", element:"Dark", english:"Lvl 100 Proto Bahamut", image:"/assets/raids/Wings_of_Terror_Nightmare.jpg", japanese:"Lv100 プロトバハムート", room:"lvl100protobahamut"}
+	var query = "q=";
+	for (var i = 0; i < followedRaids.length; i++) {
+		if (query.length > 2)
+			query += " OR ";
+		var raidConfig = FindRaidConfig(followedRaids[i]);
+		query += '"';
+		query += raidConfig.english;
+		query += '"';
+		query += " OR ";
+		query += '"';
+		query += raidConfig.japanese;
+		query += '"';
+	}
+	return encodeURI(query);
+}
+
 setInterval( RefreshRaidConfigs, 21600000 );
 
 RefreshRaidConfigs();
@@ -177,11 +236,7 @@ chrome.storage.sync.get( {
 	selectedRaids: []
 }, function ( items ) {
 	console.log( "Getting initial selected raids from storage..." );
-	for ( var i = 0; i < items.selectedRaids.length; i++ ) {
-		socket.emit( 'subscribe', {
-			room: items.selectedRaids[ i ]
-		} );
-	}
+	followedRaids = items.selectedRaids;
 } );
 
 chrome.storage.sync.get( {
@@ -216,15 +271,43 @@ chrome.storage.sync.get( {
 	viramateScript.src = "chrome-extension://" + viramateID + "/content/api.html";
 } );
 
-socket.on( 'tweet', function ( data ) {
-	console.log( "New raid received. Room: " + data.room + ", ID: " + data.id );
-	if ( !DoesRaidExist( data.id ) && !stopped ) {
-		console.log( "Raid with this ID does not exist. Adding to raids array..." );
-		unseenRaids++;
-		raids.unshift( data );
-		chrome.runtime.sendMessage( {
-			raid: data
-		} );
+function getNewRaids() {
+	if (!stopped && !midQuery) {
+		midQuery = true;
+		fetchNewRaids(buildQueryString());
+	}
+	// if (!stopped && (showSettings.devMode || !queried)) {
+	// 	queried = true;
+	// 	fetchNewRaids(queryString);
+	// } else {
+	// 	queried = false;
+	// }
+}
+
+setInterval(getNewRaids, 5050);
+
+function updateRaids(raidList) {
+	var tempRaidList = new Array();
+	for (var i = 0; i < raidList.length; i++) {
+		var data = raidList[i];
+		console.log( "New raid received. Room: " + data.room + ", ID: " + data.id );
+		if ( !DoesRaidExist( data.id ) && !stopped ) {
+			console.log( "Raid with this ID does not exist. Adding to raids array..." );
+			unseenRaids++;
+			tempRaidList.push(data);
+			raids.unshift( data );
+		}
+	}
+
+	if (unseenRaids > 20)
+		unseenRaids = 20;
+
+	chrome.runtime.sendMessage( {
+		raids: tempRaidList
+	} );
+
+	for (var i = 0; i < tempRaidList.length; i++) {
+		var data = tempRaidList[i];
 		if ( IsTrackedRaid( data.room ) ) {
 			console.log( "Raid is tracked. Sending notification..." );
 			try {
@@ -236,27 +319,6 @@ socket.on( 'tweet', function ( data ) {
 					} else {
 						title = raidConfig.english;
 					}
-					// try {
-					// 	fetch( 'https://www.gbfraiders.com' + raidConfig.image ).then( function ( response ) {
-					// 		return response.blob();
-					// 	} ).then( function ( myBlob ) {
-					// 		var objectURL = URL.createObjectURL( myBlob );
-					// 		chrome.notifications.create( {
-					// 			type: "basic",
-					// 			iconUrl: objectURL,
-					// 			title: title,
-					// 			message: 'ID:            ' + data.id + '\nTime:        ' + moment( data.time ).format( 'MMM DD HH:mm:ss' ) + '\nUser:        ' + data.user + '\nMessage: ' + data.message,
-					// 			isClickable: true
-					// 		}, function ( notificationId ) {
-					// 			notifications.push( {
-					// 				raid: data,
-					// 				notification: notificationId
-					// 			} );
-					// 		} );
-					// 	} );
-					// } catch ( error ) {
-					// 	console.log( "Error getting raid image or creating notification: " + error );
-					// }
 				}
 				console.log( "Successfully sent raid notification." );
 			} catch ( error ) {
@@ -280,8 +342,9 @@ socket.on( 'tweet', function ( data ) {
 			}
 		}
 		if ( raids.length > raidLimit ) {
-			console.log( "Too many raids. Removing oldest one..." );
-			raids.splice( raids.length - 1, 1 );
+			var numDel = raids.length - raidLimit;
+			console.log( "Too many raids. Removing oldest ones..." );
+			raids.splice(raids.length - numDel, numDel);
 		}
 		console.log( "Unseen Raids: " + unseenRaids );
 		if ( unseenRaids > 0 && unseenRaids <= raidLimit ) {
@@ -294,26 +357,28 @@ socket.on( 'tweet', function ( data ) {
 			} );
 		}
 	}
-} );
+	//midQuery = false;
+}
 
 chrome.storage.onChanged.addListener( function ( changes, namespace ) {
 	console.log( "Chrome storage changed." );
 	for ( key in changes ) {
 		var change = changes[ key ];
 		if ( key === "selectedRaids" ) {
+			followedRaids = change.newValue;
 			console.log( "Updating selected raids..." );
 			for ( raid in change.oldValue ) {
 				var room = change.oldValue[ raid ];
-				socket.emit( 'unsubscribe', {
-					room: room
-				} );
+				// socket.emit( 'unsubscribe', {
+				// 	room: room
+				// } );
 			}
 			console.log( "Unsubscribed from old raids." );
 			for ( raid in change.newValue ) {
 				var room = change.newValue[ raid ];
-				socket.emit( 'subscribe', {
-					room: room
-				} );
+				// socket.emit( 'subscribe', {
+				// 	room: room
+				// } );
 			}
 			console.log( "Subscribed to new raids." );
 		} else if ( key === "trackedRaids" ) {
@@ -374,16 +439,16 @@ function onMessage( evt ) {
 		return;
 	} else {
 		if ( evt.data.result === "refill required" ) {
-			raids[ FindRaidIndex( evt.data.id ) ].status = "not enough AP";
+			raids[ FindRaidIndex( evt.data.id ) ].status = "no AP";
 		} else if ( evt.data.result === "popup: This raid battle has already ended." ) {
-			raids[ FindRaidIndex( evt.data.id ) ].status = "battle is over";
+			raids[ FindRaidIndex( evt.data.id ) ].status = "over";
 		} else if ( evt.data.result === "popup: The number that you entered doesn't match any battle." ) {
 			raids[ FindRaidIndex( evt.data.id ) ].status = "battle not found";
 		} else if ( evt.data.result.error === "No granblue tab found" ) {
 			raids[ FindRaidIndex( evt.data.id ) ].status = "granblue not found";
 		} else if ( evt.data.result.error === "api disabled" ) {
 			raids[ FindRaidIndex( evt.data.id ) ].status = "viramate API disabled";
-		} else if ( evt.data.result === "popup: This raid battle is full. You can't participate." ) {
+		} else if ( evt.data.result === "disabled" ) {
 			raids[ FindRaidIndex( evt.data.id ) ].status = "battle is full";
 		} else if ( evt.data.result === "already in this raid" ) {
 			raids[ FindRaidIndex( evt.data.id ) ].status = "joined";

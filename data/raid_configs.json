@@ -1,3 +1,4 @@
+
 [
 	{
 		"japanese": "Lv100 プロトバハムート",
@@ -6,6 +7,22 @@
 		"image": "/assets/raids/Wings_of_Terror_Nightmare.jpg",
 		"category": "Nightmare",
 		"element": "Dark"
+	},
+	{
+		"japanese": "Lv100 ショウ",
+		"english": "Lvl 100 Sho",
+		"room": "lvl100Sho",
+		"image": "/assets/raids/Wings_of_Terror_Nightmare.jpg",
+		"category": "Impossible Event",
+		"element": "Wind"
+	},
+	{
+		"japanese": "Lv50 ジェイド",
+		"english": "Lvl 50 Jade",
+		"room": "lvl100Jade",
+		"image": "/assets/raids/Wings_of_Terror_Nightmare.jpg",
+		"category": "Event",
+		"element": "Water"
 	},
 	{
 		"japanese": "Lv150 プロトバハムート",
@@ -615,6 +632,30 @@
 		"category": "Rise of the Beasts",
 		"element": "Wind"
 	},
+	{
+		"english": "Lvl 95 Zaoshen",
+		"japanese": "Lv95 ザオシェン",
+		"room": "lvl95zaoshen",
+		"image": "/assets/raids/Zephyrus_ExtremePlus.jpg",
+		"category": "Unite and Fight",
+		"element": "Fire"
+	},	
+		{
+		"english": "Lvl 100 Zaoshen",
+		"japanese": "Lv100 ザオシェン",
+		"room": "lvl100zaoshen",
+		"image": "/assets/raids/Zephyrus_ExtremePlus.jpg",
+		"category": "Unite and Fight",
+		"element": "Fire"
+	},	
+		{
+		"english": "Lvl 90 Zaoshen",
+		"japanese": "Lv90 ザオシェン",
+		"room": "lvl90zaoshen",
+		"image": "/assets/raids/Zephyrus_ExtremePlus.jpg",
+		"category": "Unite and Fight",
+		"element": "Fire"
+	},	
 	{
 		"english": "Lvl 150 Ultimate Bahamut",
 		"japanese": "Lv150 アルティメットバハムート",
